@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import {
   AlertTriangle,
   BarChart3,
@@ -39,9 +39,12 @@ import {
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
+import Backdrop from "@mui/material/Backdrop";
+import CircularProgress from "@mui/material/CircularProgress";
+import Popover from "@mui/material/Popover";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useForm, useWatch } from "react-hook-form";
+import { Controller, useForm, useWatch } from "react-hook-form";
 import {
   Area,
   AreaChart,
@@ -656,7 +659,138 @@ export function FinanceApp() {
         asset={editingAsset}
         onOpenChange={setAssetDialogOpen}
       />
+      <DatabaseBackdrop open={store.isSaving} />
+      <SyncResultPopover isSaving={store.isSaving} syncError={store.syncError} />
     </div>
+  );
+}
+
+function SyncResultPopover({
+  isSaving,
+  syncError,
+}: {
+  isSaving: boolean;
+  syncError: string | null;
+}) {
+  const wasSaving = useRef(false);
+  const [left, setLeft] = useState(0);
+  const [notice, setNotice] = useState<{
+    open: boolean;
+    type: "success" | "failed";
+    message: string;
+  }>({
+    open: false,
+    type: "success",
+    message: "",
+  });
+
+  useEffect(() => {
+    const updateLeft = () => setLeft(Math.max(16, window.innerWidth - 24));
+
+    updateLeft();
+    window.addEventListener("resize", updateLeft);
+
+    return () => window.removeEventListener("resize", updateLeft);
+  }, []);
+
+  useEffect(() => {
+    let timeout: number | undefined;
+
+    if (wasSaving.current && !isSaving) {
+      timeout = window.setTimeout(() => {
+        setNotice({
+          open: true,
+          type: syncError ? "failed" : "success",
+          message: syncError ?? "Saved successfully to the database.",
+        });
+      }, 0);
+    } else if (!isSaving && syncError) {
+      timeout = window.setTimeout(() => {
+        setNotice({
+          open: true,
+          type: "failed",
+          message: syncError,
+        });
+      }, 0);
+    }
+
+    wasSaving.current = isSaving;
+
+    return () => {
+      if (timeout !== undefined) {
+        window.clearTimeout(timeout);
+      }
+    };
+  }, [isSaving, syncError]);
+
+  useEffect(() => {
+    if (!notice.open) return;
+
+    const timeout = window.setTimeout(() => {
+      setNotice((current) => ({ ...current, open: false }));
+    }, 2600);
+
+    return () => window.clearTimeout(timeout);
+  }, [notice.open, notice.message]);
+
+  return (
+    <Popover
+      open={notice.open}
+      onClose={() => setNotice((current) => ({ ...current, open: false }))}
+      anchorReference="anchorPosition"
+      anchorPosition={{ top: 18, left }}
+      transformOrigin={{ vertical: "top", horizontal: "right" }}
+      slotProps={{
+        paper: {
+          sx: {
+            borderRadius: "14px",
+            boxShadow: "0 18px 45px rgba(15, 23, 42, 0.18)",
+            overflow: "hidden",
+          },
+        },
+      }}
+    >
+      <div
+        className={cn(
+          "flex min-w-72 items-center gap-3 px-4 py-3 text-sm",
+          notice.type === "success"
+            ? "bg-green-50 text-green-800"
+            : "bg-red-50 text-red-800",
+        )}
+      >
+        {notice.type === "success" ? (
+          <CheckCircle2 className="h-5 w-5 shrink-0" />
+        ) : (
+          <AlertTriangle className="h-5 w-5 shrink-0" />
+        )}
+        <div>
+          <p className="font-medium">{notice.type === "success" ? "Success" : "Failed"}</p>
+          <p className="text-xs opacity-80">{notice.message}</p>
+        </div>
+      </div>
+    </Popover>
+  );
+}
+
+function DatabaseBackdrop({ open }: { open: boolean }) {
+  return (
+    <Backdrop
+      open={open}
+      sx={{
+        color: "#fff",
+        zIndex: 1400,
+        backgroundColor: "rgba(15, 23, 42, 0.55)",
+        backdropFilter: "blur(3px)",
+      }}
+    >
+      <div className="flex flex-col items-center gap-4 rounded-xl bg-slate-950/80 px-8 py-6 text-center shadow-2xl">
+        <CircularProgress color="inherit" />
+        <div>
+          <p className="text-sm font-medium">Saving to database</p>
+          <p className="mt-1 text-xs text-white/70">Please wait while VaultX syncs your changes.</p>
+        </div>
+      </div>
+    </Backdrop>
   );
 }
 
@@ -834,6 +968,24 @@ function DashboardSection({
   const week = expensesThisWeek(expenses);
   const monthExpenses = expensesThisMonth(expenses);
   const monthIncomes = incomesThisMonth(incomes);
+  const monthExpenseTotal = sumAmounts(monthExpenses);
+  const monthIncomeTotal = sumAmounts(monthIncomes);
+  const monthlyBalance = monthIncomeTotal - monthExpenseTotal;
+  const isInDebt = monthlyBalance < 0;
+  const cashFlowPercent =
+    monthIncomeTotal > 0
+      ? Math.round((monthExpenseTotal / monthIncomeTotal) * 100)
+      : monthExpenseTotal > 0
+        ? 100
+        : 0;
+  const incomeBreakdown = groupedAmountBreakdown(
+    monthIncomes,
+    (income) => `${income.source} - ${income.paymentMethod}`,
+  ).slice(0, 5);
+  const expenseBreakdown = groupedAmountBreakdown(
+    monthExpenses,
+    (expense) => `${expense.category} - ${expense.paymentMethod}`,
+  ).slice(0, 5);
   const assetValue = sumAssetValues(assets);
   const netWorth = assetValue - profile.liabilities;
   const topCategories = categoryTotals(monthExpenses).slice(0, 5);
@@ -854,84 +1006,100 @@ function DashboardSection({
         }
       />
 
-      <div className="grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
-        <Card className="rounded-xl border-0 bg-violet-600 text-white shadow-xl shadow-violet-200 dark:shadow-black/30">
-          <CardContent className="grid gap-6 p-6 md:grid-cols-[1fr_220px] md:items-center">
-            <div>
-              <p className="text-sm text-violet-100">Website Analytics</p>
-              <h2 className="mt-2 text-2xl font-semibold tracking-tight">
-                Total {formatCurrency(sumAmounts(monthIncomes) || netWorth)} tracked value
-              </h2>
-              <p className="mt-2 max-w-xl text-sm leading-6 text-violet-100">
-                Monitor cash flow, spending pressure, assets, and budgets from one horizontal admin workspace.
-              </p>
-              <div className="mt-6 grid gap-3 sm:grid-cols-4">
-                <div>
-                  <p className="text-2xl font-semibold">{expenses.length}</p>
-                  <p className="text-xs text-violet-100">Expenses</p>
-                </div>
-                <div>
-                  <p className="text-2xl font-semibold">{incomes.length}</p>
-                  <p className="text-xs text-violet-100">Income</p>
-                </div>
-                <div>
-                  <p className="text-2xl font-semibold">{assets.length}</p>
-                  <p className="text-xs text-violet-100">Assets</p>
-                </div>
-                <div>
-                  <p className="text-2xl font-semibold">{budgets.length}</p>
-                  <p className="text-xs text-violet-100">Budgets</p>
-                </div>
-              </div>
-            </div>
-            <div className="hidden h-44 items-end gap-3 md:flex">
-              {[42, 72, 56, 92, 66, 84].map((height, index) => (
-                <div key={index} className="flex flex-1 flex-col justify-end gap-2">
-                  <span
-                    className="rounded-t-lg bg-white/80"
-                    style={{ height: `${height}%` }}
-                  />
-                  <span
-                    className="rounded-t-lg bg-cyan-300/80"
-                    style={{ height: `${Math.max(18, 105 - height)}%` }}
-                  />
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
+      <Card className="overflow-hidden rounded-xl border-0 bg-white shadow-xl shadow-slate-200/70 dark:bg-slate-900 dark:shadow-black/30">
+        <CardContent className="p-0">
+          <div className="border-b bg-white px-5 py-4 text-center dark:border-white/10 dark:bg-slate-900">
+            <p className="text-sm uppercase tracking-wide text-muted-foreground">Cash Flow Overview</p>
+            <h2 className="mt-1 text-2xl font-semibold">Salary vs Expenses</h2>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Savings, GCash, Maya, GFunds, GStocks, and other assets are tracked separately in Assets.
+            </p>
+          </div>
 
-        <Card className="rounded-xl border-0 shadow-sm">
-          <CardContent className="p-6">
-            <p className="text-sm text-muted-foreground">Sales Overview</p>
-            <div className="mt-4 flex items-end justify-between gap-4">
-              <div>
-                <p className="text-3xl font-semibold">{formatCurrency(sumAmounts(monthExpenses))}</p>
-                <p className="mt-1 text-sm text-green-600">
-                  {monthIncomes.length > 0 ? "+ income recorded" : "Add income to compare"}
-                </p>
-              </div>
-              <div className="grid h-28 w-28 place-items-center rounded-full border-[12px] border-violet-500 border-r-violet-100 border-t-cyan-400 dark:border-r-slate-800">
-                <span className="text-lg font-semibold">
-                  {monthIncomes.length > 0
-                    ? `${Math.round((sumAmounts(monthExpenses) / Math.max(1, sumAmounts(monthIncomes))) * 100)}%`
-                    : "0%"}
-                </span>
-              </div>
-            </div>
-            <div className="mt-5 grid grid-cols-2 gap-3 text-sm">
-              <div className="rounded-xl bg-slate-50 p-3 dark:bg-slate-900">
-                <p className="text-muted-foreground">Income</p>
-                <p className="font-semibold">{formatCurrency(sumAmounts(monthIncomes))}</p>
-              </div>
-              <div className="rounded-xl bg-slate-50 p-3 dark:bg-slate-900">
-                <p className="text-muted-foreground">Spending</p>
-                <p className="font-semibold">{formatCurrency(sumAmounts(monthExpenses))}</p>
+          <div className="grid gap-0 lg:grid-cols-[1fr_280px_1fr]">
+            <div className="bg-slate-50 p-5 dark:bg-slate-950/40">
+              <h3 className="mb-4 text-center text-lg font-semibold">Salary / Income List</h3>
+              <div className="space-y-3">
+                {incomeBreakdown.length > 0 ? (
+                  incomeBreakdown.map((item) => (
+                    <div key={item.name} className="flex items-center justify-between text-sm">
+                      <span>{item.name}:</span>
+                      <span className="font-semibold text-green-600 dark:text-green-400">{formatCurrency(item.value)}</span>
+                    </div>
+                  ))
+                ) : (
+                  <div className="rounded-lg border border-dashed p-4 text-center text-sm text-muted-foreground">
+                    No income recorded this month
+                  </div>
+                )}
               </div>
             </div>
-          </CardContent>
-        </Card>
-      </div>
+
+            <div className="flex flex-col items-center justify-center border-y bg-white p-6 text-center dark:border-white/10 dark:bg-slate-900 lg:border-x lg:border-y-0">
+              <div
+                className={cn(
+                  "grid h-36 w-36 place-items-center rounded-full border-[14px] border-r-slate-100 border-t-cyan-400 dark:border-r-slate-800",
+                  isInDebt ? "border-red-500" : "border-green-500",
+                )}
+              >
+                <div>
+                  <p className={cn("text-4xl font-bold", isInDebt ? "text-red-600" : "text-green-600")}>
+                    {cashFlowPercent}%
+                  </p>
+                  <p className="text-xs text-muted-foreground">expense rate</p>
+                </div>
+              </div>
+              <p className={cn("mt-5 text-xl font-semibold", isInDebt ? "text-red-600" : "text-green-600")}>
+                {isInDebt
+                  ? "You are in debt"
+                  : monthlyBalance > 0
+                    ? "You are positive"
+                    : "Break-even"}
+              </p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                {isInDebt
+                  ? `${formatCurrency(monthExpenseTotal)} spending is higher than ${formatCurrency(monthIncomeTotal)} income.`
+                  : "Income covers your current spending."}
+              </p>
+            </div>
+
+            <div className="bg-slate-50 p-5 dark:bg-slate-950/40">
+              <h3 className="mb-4 text-center text-lg font-semibold">Expense List</h3>
+              <div className="space-y-3">
+                {expenseBreakdown.length > 0 ? (
+                  expenseBreakdown.map((item) => (
+                    <div key={item.name} className="flex items-center justify-between text-sm">
+                      <span>{item.name}:</span>
+                      <span className="font-semibold text-red-600 dark:text-red-400">{formatCurrency(item.value)}</span>
+                    </div>
+                  ))
+                ) : (
+                  <div className="rounded-lg border border-dashed p-4 text-center text-sm text-muted-foreground">
+                    No expenses recorded this month
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          <div className="grid gap-3 bg-slate-100 p-4 dark:bg-slate-950 md:grid-cols-3">
+            <div className="rounded-lg bg-white px-4 py-3 text-center shadow-sm dark:bg-slate-900">
+              <p className="text-xs uppercase tracking-wide text-muted-foreground">Income</p>
+              <p className="mt-1 text-2xl font-semibold text-green-600 dark:text-green-400">{formatCurrency(monthIncomeTotal)}</p>
+            </div>
+            <div className="rounded-lg bg-white px-4 py-3 text-center shadow-sm dark:bg-slate-900">
+              <p className="text-xs uppercase tracking-wide text-muted-foreground">Balance</p>
+              <p className={cn("mt-1 text-2xl font-semibold", isInDebt ? "text-red-600 dark:text-red-400" : "text-green-600 dark:text-green-400")}>
+                {isInDebt ? `-${formatCurrency(Math.abs(monthlyBalance))}` : formatCurrency(monthlyBalance)}
+              </p>
+            </div>
+            <div className="rounded-lg bg-white px-4 py-3 text-center shadow-sm dark:bg-slate-900">
+              <p className="text-xs uppercase tracking-wide text-muted-foreground">Expenses</p>
+              <p className="mt-1 text-2xl font-semibold text-red-600 dark:text-red-400">{formatCurrency(monthExpenseTotal)}</p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <MetricCard
@@ -957,8 +1125,8 @@ function DashboardSection({
         />
         <MetricCard
           title="Monthly expenses"
-          value={formatCurrency(sumAmounts(monthExpenses))}
-          detail={`${formatCurrency(sumAmounts(monthIncomes))} income this month`}
+          value={formatCurrency(monthExpenseTotal)}
+          detail={`${formatCurrency(monthIncomeTotal)} income this month`}
           icon={TrendingDown}
           tone="blue"
         />
@@ -2389,7 +2557,17 @@ function ExpenseDialog({
             <Input type="datetime-local" {...form.register("date")} />
           </FormField>
           <FormField label="Amount" error={form.formState.errors.amount?.message}>
-            <Input type="number" min="0" step="0.01" {...form.register("amount", { valueAsNumber: true })} />
+            <Controller
+              control={form.control}
+              name="amount"
+              render={({ field }) => (
+                <CurrencyInput
+                  value={field.value}
+                  onChange={field.onChange}
+                  onBlur={field.onBlur}
+                />
+              )}
+            />
           </FormField>
           <FormField label="Category" error={form.formState.errors.category?.message}>
             <Select
@@ -2526,7 +2704,17 @@ function IncomeDialog({
             <Input type="date" {...form.register("date")} />
           </FormField>
           <FormField label="Amount" error={form.formState.errors.amount?.message}>
-            <Input type="number" min="0" step="0.01" {...form.register("amount", { valueAsNumber: true })} />
+            <Controller
+              control={form.control}
+              name="amount"
+              render={({ field }) => (
+                <CurrencyInput
+                  value={field.value}
+                  onChange={field.onChange}
+                  onBlur={field.onBlur}
+                />
+              )}
+            />
           </FormField>
           <FormField label="Source" error={form.formState.errors.source?.message}>
             <Select
@@ -2693,10 +2881,30 @@ function AssetDialog({
             <Input type="date" {...form.register("purchaseDate")} />
           </FormField>
           <FormField label="Purchase price" error={form.formState.errors.purchasePrice?.message}>
-            <Input type="number" min="0" step="0.01" {...form.register("purchasePrice", { valueAsNumber: true })} />
+            <Controller
+              control={form.control}
+              name="purchasePrice"
+              render={({ field }) => (
+                <CurrencyInput
+                  value={field.value}
+                  onChange={field.onChange}
+                  onBlur={field.onBlur}
+                />
+              )}
+            />
           </FormField>
           <FormField label="Current value" error={form.formState.errors.currentValue?.message}>
-            <Input type="number" min="0" step="0.01" {...form.register("currentValue", { valueAsNumber: true })} />
+            <Controller
+              control={form.control}
+              name="currentValue"
+              render={({ field }) => (
+                <CurrencyInput
+                  value={field.value}
+                  onChange={field.onChange}
+                  onBlur={field.onBlur}
+                />
+              )}
+            />
           </FormField>
           <FormField label="Location" error={form.formState.errors.location?.message}>
             <Input {...form.register("location")} />
@@ -2839,7 +3047,17 @@ function BudgetDialog({
             </Select>
           </FormField>
           <FormField label="Monthly limit" error={form.formState.errors.monthlyLimit?.message}>
-            <Input type="number" min="0" step="0.01" {...form.register("monthlyLimit", { valueAsNumber: true })} />
+            <Controller
+              control={form.control}
+              name="monthlyLimit"
+              render={({ field }) => (
+                <CurrencyInput
+                  value={field.value}
+                  onChange={field.onChange}
+                  onBlur={field.onBlur}
+                />
+              )}
+            />
           </FormField>
           <FormField label="Month" error={form.formState.errors.month?.message}>
             <Input type="number" min="1" max="12" {...form.register("month", { valueAsNumber: true })} />
@@ -2919,10 +3137,30 @@ function GoalDialog({
             <Input {...form.register("name")} />
           </FormField>
           <FormField label="Target amount" error={form.formState.errors.targetAmount?.message}>
-            <Input type="number" min="0" step="0.01" {...form.register("targetAmount", { valueAsNumber: true })} />
+            <Controller
+              control={form.control}
+              name="targetAmount"
+              render={({ field }) => (
+                <CurrencyInput
+                  value={field.value}
+                  onChange={field.onChange}
+                  onBlur={field.onBlur}
+                />
+              )}
+            />
           </FormField>
           <FormField label="Current amount" error={form.formState.errors.currentAmount?.message}>
-            <Input type="number" min="0" step="0.01" {...form.register("currentAmount", { valueAsNumber: true })} />
+            <Controller
+              control={form.control}
+              name="currentAmount"
+              render={({ field }) => (
+                <CurrencyInput
+                  value={field.value}
+                  onChange={field.onChange}
+                  onBlur={field.onBlur}
+                />
+              )}
+            />
           </FormField>
           <FormField label="Target date">
             <Input type="date" {...form.register("dueDate")} />
@@ -3053,6 +3291,53 @@ function FormField({
   );
 }
 
+function parseCurrencyInput(value: string) {
+  const normalized = value.replace(/,/g, "").replace(/[^\d.]/g, "");
+  const [whole = "0", ...decimalParts] = normalized.split(".");
+  const decimal = decimalParts.join("");
+  const parsed = Number(`${whole || "0"}${decimal ? `.${decimal}` : ""}`);
+
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function formatCurrencyInput(value: number) {
+  return new Intl.NumberFormat("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(Number.isFinite(value) ? value : 0);
+}
+
+function CurrencyInput({
+  value,
+  onChange,
+  onBlur,
+}: {
+  value: number;
+  onChange: (value: number) => void;
+  onBlur?: () => void;
+}) {
+  const [displayValue, setDisplayValue] = useState(() => formatCurrencyInput(value));
+
+  return (
+    <Input
+      inputMode="decimal"
+      value={displayValue}
+      placeholder="0.00"
+      onFocus={(event) => event.currentTarget.select()}
+      onChange={(event) => {
+        const nextValue = event.target.value;
+
+        setDisplayValue(nextValue);
+        onChange(parseCurrencyInput(nextValue));
+      }}
+      onBlur={() => {
+        setDisplayValue(formatCurrencyInput(parseCurrencyInput(displayValue)));
+        onBlur?.();
+      }}
+    />
+  );
+}
+
 function Pagination({
   page,
   totalPages,
@@ -3127,6 +3412,22 @@ function StatusBadge({
   }[status];
 
   return <Badge className={className}>{label}</Badge>;
+}
+
+function groupedAmountBreakdown<T extends { amount: number }>(
+  items: T[],
+  getLabel: (item: T) => string,
+) {
+  const totals = new Map<string, number>();
+
+  items.forEach((item) => {
+    const label = getLabel(item);
+    totals.set(label, (totals.get(label) ?? 0) + item.amount);
+  });
+
+  return Array.from(totals.entries())
+    .map(([name, value]) => ({ name, value }))
+    .sort((a, b) => b.value - a.value);
 }
 
 function InfoTile({

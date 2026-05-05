@@ -131,9 +131,11 @@ export const useFinanceStore = create<FinanceState>()((set, get) => {
       clearTimeout(saveTimer);
     }
 
+    set({ isSaving: true, syncError: null });
+
     saveTimer = setTimeout(() => {
       void syncNow();
-    }, 400);
+    }, 300);
   };
 
   return {
