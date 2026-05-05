@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import {
   AlertTriangle,
   BarChart3,
+  Bell,
   CalendarDays,
   CheckCircle2,
   ChevronLeft,
@@ -32,6 +33,7 @@ import {
   TrendingDown,
   TrendingUp,
   Upload,
+  UserCircle,
   WalletCards,
 } from "lucide-react";
 import Link from "next/link";
@@ -76,6 +78,8 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
@@ -103,6 +107,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Checkbox } from "@/components/ui/checkbox";
+import { LogoutButton } from "@/components/auth/logout-button";
 import { FileDropzone } from "@/components/finance/file-dropzone";
 import type {
   Asset,
@@ -402,6 +407,12 @@ export function FinanceApp() {
   const [editingAsset, setEditingAsset] = useState<Asset | null>(null);
 
   useEffect(() => {
+    if (!store.hasLoaded) {
+      void store.loadFromDatabase();
+    }
+  }, [store]);
+
+  useEffect(() => {
     setTheme(store.settings.darkMode ? "dark" : "light");
   }, [setTheme, store.settings.darkMode]);
 
@@ -481,83 +492,121 @@ export function FinanceApp() {
   const activeLabel = navItems.find((item) => item.key === activeView)?.label ?? "Overview";
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-950 dark:bg-slate-950 dark:text-slate-50">
-      <div className="flex min-h-screen">
-        <aside className="hidden w-72 shrink-0 border-r bg-background lg:block">
-          <NavContent
-            activeView={activeView}
-            profileName={store.settings.profile.fullName}
-          />
-        </aside>
-
-        <div className="flex min-w-0 flex-1 flex-col">
-          <header className="sticky top-0 z-30 border-b bg-background/95 px-4 py-3 backdrop-blur md:px-6">
-            <div className="flex items-center gap-3">
-              <Sheet open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
-                <SheetTrigger asChild>
-                  <Button className="lg:hidden" size="icon" variant="outline">
-                    <Menu className="h-4 w-4" />
-                    <span className="sr-only">Open navigation</span>
-                  </Button>
-                </SheetTrigger>
-                <SheetContent side="left" className="w-80 p-0">
-                  <SheetHeader className="sr-only">
-                    <SheetTitle>VaultX navigation</SheetTitle>
-                  </SheetHeader>
-                  <NavContent
-                    activeView={activeView}
-                    onNavigate={() => {
-                      setMobileNavOpen(false);
-                    }}
-                    profileName={store.settings.profile.fullName}
-                  />
-                </SheetContent>
-              </Sheet>
-
-              <div className="min-w-0 flex-1">
-                <p className="text-xs text-muted-foreground">Personal finance workspace</p>
-                <h2 className="truncate text-lg font-semibold">{activeLabel}</h2>
-              </div>
-
-              <div className="relative hidden w-full max-w-md md:block">
-                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  value={query}
-                  onChange={(event) => setQuery(event.target.value)}
-                  className="pl-9"
-                  placeholder="Search expenses, income, assets"
-                />
-                {searchResults.length > 0 ? (
-                  <Card className="absolute right-0 top-12 z-40 w-full rounded-lg shadow-lg">
-                    <CardContent className="p-2">
-                      {searchResults.map((result) => (
-                        <button
-                          key={result.id}
-                          className="flex w-full items-center justify-between rounded-md px-3 py-2 text-left text-sm hover:bg-accent"
-                          onClick={() => {
-                            navigateToView(result.view);
-                            setQuery("");
-                          }}
-                        >
-                          <span className="truncate">{result.label}</span>
-                          <span className="ml-3 shrink-0 text-xs text-muted-foreground">
-                            {result.meta}
-                          </span>
-                        </button>
-                      ))}
-                    </CardContent>
-                  </Card>
-                ) : null}
-              </div>
-
-              <Button onClick={() => openExpenseDialog()} className="hidden gap-2 bg-teal-700 hover:bg-teal-800 md:flex">
-                <Plus className="h-4 w-4" />
-                Expense
+    <div className="min-h-screen bg-[#f8f7fb] text-slate-950 dark:bg-slate-950 dark:text-slate-50">
+      <header className="sticky top-0 z-30 border-b border-slate-200/70 bg-white/95 backdrop-blur dark:border-white/10 dark:bg-slate-950/95">
+        <div className="mx-auto flex max-w-7xl items-center gap-3 px-4 py-3 md:px-6">
+          <Sheet open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
+            <SheetTrigger asChild>
+              <Button className="lg:hidden" size="icon" variant="outline">
+                <Menu className="h-4 w-4" />
+                <span className="sr-only">Open navigation</span>
               </Button>
-            </div>
-          </header>
+            </SheetTrigger>
+            <SheetContent side="left" className="w-80 p-0">
+              <SheetHeader className="sr-only">
+                <SheetTitle>VaultX navigation</SheetTitle>
+              </SheetHeader>
+              <NavContent
+                activeView={activeView}
+                onNavigate={() => {
+                  setMobileNavOpen(false);
+                }}
+                profileName={store.settings.profile.fullName}
+              />
+            </SheetContent>
+          </Sheet>
 
-          <main className="flex-1 p-4 md:p-6">
+          <Link href="/overview" className="flex shrink-0 items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-violet-600 text-white shadow-lg shadow-violet-200 dark:shadow-violet-950">
+              <WalletCards className="h-5 w-5" />
+            </div>
+            <div className="hidden sm:block">
+              <p className="text-lg font-semibold tracking-tight">VaultX</p>
+              <p className="text-xs text-muted-foreground">Finance admin</p>
+            </div>
+          </Link>
+
+          <div className="relative ml-auto hidden w-full max-w-md md:block">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              className="h-10 rounded-xl border-slate-200 bg-[#f8f7fb] pl-9 dark:border-white/10 dark:bg-slate-900"
+              placeholder="Search expenses, income, assets"
+            />
+            {searchResults.length > 0 ? (
+              <Card className="absolute right-0 top-12 z-40 w-full rounded-xl shadow-xl shadow-violet-100 dark:shadow-black/30">
+                <CardContent className="p-2">
+                  {searchResults.map((result) => (
+                    <button
+                      key={result.id}
+                      className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm hover:bg-violet-50 dark:hover:bg-violet-950/40"
+                      onClick={() => {
+                        navigateToView(result.view);
+                        setQuery("");
+                      }}
+                    >
+                      <span className="truncate">{result.label}</span>
+                      <span className="ml-3 shrink-0 text-xs text-muted-foreground">
+                        {result.meta}
+                      </span>
+                    </button>
+                  ))}
+                </CardContent>
+              </Card>
+            ) : null}
+          </div>
+
+          <Button
+            onClick={() => openExpenseDialog()}
+            className="hidden h-10 gap-2 rounded-xl bg-violet-600 hover:bg-violet-700 md:flex"
+          >
+            <Plus className="h-4 w-4" />
+            Expense
+          </Button>
+
+          <Button size="icon" variant="ghost" className="rounded-xl">
+            <Bell className="h-4 w-4" />
+            <span className="sr-only">Notifications</span>
+          </Button>
+
+          <ProfileMenu profileName={store.settings.profile.fullName} />
+        </div>
+
+        <div className="hidden border-t border-slate-100 bg-white dark:border-white/10 dark:bg-slate-950 lg:block">
+          <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-2">
+            <HorizontalNav activeView={activeView} />
+            <SyncStatus
+              isSaving={store.isSaving}
+              isLoading={store.isLoading}
+              syncError={store.syncError}
+            />
+          </div>
+        </div>
+      </header>
+
+      <main className="mx-auto max-w-7xl px-4 py-5 md:px-6 md:py-7">
+        <div className="mb-5 flex flex-col gap-1 lg:hidden">
+          <p className="text-xs text-muted-foreground">Personal finance workspace</p>
+          <h2 className="truncate text-xl font-semibold">{activeLabel}</h2>
+          <SyncStatus
+            isSaving={store.isSaving}
+            isLoading={store.isLoading}
+            syncError={store.syncError}
+          />
+        </div>
+
+        {store.isLoading && !store.hasLoaded ? (
+          <div className="flex min-h-[60vh] items-center justify-center rounded-xl border border-dashed bg-white dark:bg-slate-900">
+            <div className="text-center">
+              <p className="font-medium">Loading database records</p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                VaultX is getting your finance workspace from MySQL.
+              </p>
+            </div>
+          </div>
+        ) : (
+          <>
             {activeView === "overview" ? (
               <DashboardSection
                 onAddExpense={() => openExpenseDialog()}
@@ -577,13 +626,13 @@ export function FinanceApp() {
             {activeView === "budgets" ? <BudgetsSection /> : null}
             {activeView === "categories" ? <CategoriesSection /> : null}
             {activeView === "settings" ? <SettingsSection /> : null}
-          </main>
-        </div>
-      </div>
+          </>
+        )}
+      </main>
 
       <Button
         onClick={() => openExpenseDialog()}
-        className="fixed bottom-5 right-5 z-40 h-14 w-14 rounded-full bg-teal-700 p-0 shadow-lg hover:bg-teal-800 md:hidden"
+        className="fixed bottom-5 right-5 z-40 h-14 w-14 rounded-full bg-violet-600 p-0 shadow-lg shadow-violet-200 hover:bg-violet-700 md:hidden"
       >
         <Plus className="h-6 w-6" />
         <span className="sr-only">Quick add expense</span>
@@ -611,6 +660,113 @@ export function FinanceApp() {
   );
 }
 
+function HorizontalNav({ activeView }: { activeView: ViewKey }) {
+  return (
+    <nav className="flex items-center gap-1">
+      {navItems.map((item) => {
+        const Icon = item.icon;
+
+        return (
+          <Link
+            key={item.key}
+            href={viewRoutes[item.key]}
+            className={cn(
+              "flex h-10 items-center gap-2 rounded-xl px-3 text-sm font-medium transition",
+              activeView === item.key
+                ? "bg-violet-50 text-violet-700 dark:bg-violet-950/50 dark:text-violet-200"
+                : "text-muted-foreground hover:bg-slate-100 hover:text-foreground dark:hover:bg-slate-900",
+            )}
+          >
+            <Icon className="h-4 w-4" />
+            {item.label}
+          </Link>
+        );
+      })}
+    </nav>
+  );
+}
+
+function ProfileMenu({ profileName }: { profileName: string }) {
+  const initials = profileName
+    .split(" ")
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase())
+    .join("") || "VX";
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button variant="ghost" className="h-10 gap-2 rounded-xl px-2">
+          <span className="grid h-8 w-8 place-items-center rounded-full bg-violet-100 text-xs font-semibold text-violet-700 dark:bg-violet-950 dark:text-violet-200">
+            {initials}
+          </span>
+          <span className="hidden max-w-32 truncate text-sm md:inline">{profileName}</span>
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-64">
+        <DropdownMenuLabel>
+          <div className="flex items-center gap-3">
+            <span className="grid h-10 w-10 place-items-center rounded-full bg-violet-100 text-sm font-semibold text-violet-700 dark:bg-violet-950 dark:text-violet-200">
+              {initials}
+            </span>
+            <span className="min-w-0">
+              <span className="block truncate text-sm font-medium text-foreground">{profileName}</span>
+              <span className="block truncate text-xs text-muted-foreground">Database account</span>
+            </span>
+          </div>
+        </DropdownMenuLabel>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem asChild>
+          <Link href="/settings">
+            <UserCircle className="mr-2 h-4 w-4" />
+            Profile settings
+          </Link>
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        <div className="px-1 pb-1">
+          <LogoutButton />
+        </div>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+function SyncStatus({
+  isSaving,
+  isLoading,
+  syncError,
+}: {
+  isSaving: boolean;
+  isLoading: boolean;
+  syncError: string | null;
+}) {
+  if (syncError) {
+    return (
+      <div className="mt-2 flex items-center gap-2 text-xs text-red-600">
+        <AlertTriangle className="h-3.5 w-3.5" />
+        <span>{syncError}</span>
+      </div>
+    );
+  }
+
+  if (isLoading || isSaving) {
+    return (
+      <div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
+        <RotateCcw className="h-3.5 w-3.5 animate-spin" />
+        <span>{isLoading ? "Loading from database" : "Saving to database"}</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-2 hidden items-center gap-2 text-xs text-muted-foreground md:flex">
+      <CheckCircle2 className="h-3.5 w-3.5 text-green-600" />
+      <span>Database synced</span>
+    </div>
+  );
+}
+
 function NavContent({
   activeView,
   onNavigate,
@@ -624,12 +780,12 @@ function NavContent({
     <div className="flex h-full flex-col">
       <div className="border-b p-5">
         <div className="flex items-center gap-3">
-          <div className="flex h-11 w-11 items-center justify-center rounded-lg bg-teal-700 text-white">
+          <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-violet-600 text-white">
             <WalletCards className="h-5 w-5" />
           </div>
           <div>
             <p className="text-lg font-semibold">VaultX</p>
-            <p className="text-xs text-muted-foreground">PHP wealth tracker</p>
+            <p className="text-xs text-muted-foreground">Finance admin</p>
           </div>
         </div>
       </div>
@@ -645,7 +801,7 @@ function NavContent({
               className={cn(
                 "flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-medium transition",
                 activeView === item.key
-                  ? "bg-teal-50 text-teal-800 dark:bg-teal-950/40 dark:text-teal-200"
+                  ? "bg-violet-50 text-violet-700 dark:bg-violet-950/40 dark:text-violet-200"
                   : "text-muted-foreground hover:bg-accent hover:text-foreground",
               )}
             >
@@ -659,6 +815,7 @@ function NavContent({
       <div className="border-t p-4">
         <p className="text-xs text-muted-foreground">Signed in as</p>
         <p className="truncate text-sm font-medium">{profileName}</p>
+        <LogoutButton onSubmit={onNavigate} />
       </div>
     </div>
   );
@@ -688,14 +845,93 @@ function DashboardSection({
     <div className="space-y-6">
       <SectionHeader
         title="Overview"
-        description="Track net worth, current-month cash flow, and spending pressure at a glance."
+        description="Analytics-style finance dashboard powered by your MySQL records."
         action={
-          <Button onClick={onAddExpense} className="gap-2 bg-teal-700 hover:bg-teal-800">
+          <Button onClick={onAddExpense} className="gap-2 bg-violet-600 hover:bg-violet-700">
             <Plus className="h-4 w-4" />
             Quick add expense
           </Button>
         }
       />
+
+      <div className="grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
+        <Card className="rounded-xl border-0 bg-violet-600 text-white shadow-xl shadow-violet-200 dark:shadow-black/30">
+          <CardContent className="grid gap-6 p-6 md:grid-cols-[1fr_220px] md:items-center">
+            <div>
+              <p className="text-sm text-violet-100">Website Analytics</p>
+              <h2 className="mt-2 text-2xl font-semibold tracking-tight">
+                Total {formatCurrency(sumAmounts(monthIncomes) || netWorth)} tracked value
+              </h2>
+              <p className="mt-2 max-w-xl text-sm leading-6 text-violet-100">
+                Monitor cash flow, spending pressure, assets, and budgets from one horizontal admin workspace.
+              </p>
+              <div className="mt-6 grid gap-3 sm:grid-cols-4">
+                <div>
+                  <p className="text-2xl font-semibold">{expenses.length}</p>
+                  <p className="text-xs text-violet-100">Expenses</p>
+                </div>
+                <div>
+                  <p className="text-2xl font-semibold">{incomes.length}</p>
+                  <p className="text-xs text-violet-100">Income</p>
+                </div>
+                <div>
+                  <p className="text-2xl font-semibold">{assets.length}</p>
+                  <p className="text-xs text-violet-100">Assets</p>
+                </div>
+                <div>
+                  <p className="text-2xl font-semibold">{budgets.length}</p>
+                  <p className="text-xs text-violet-100">Budgets</p>
+                </div>
+              </div>
+            </div>
+            <div className="hidden h-44 items-end gap-3 md:flex">
+              {[42, 72, 56, 92, 66, 84].map((height, index) => (
+                <div key={index} className="flex flex-1 flex-col justify-end gap-2">
+                  <span
+                    className="rounded-t-lg bg-white/80"
+                    style={{ height: `${height}%` }}
+                  />
+                  <span
+                    className="rounded-t-lg bg-cyan-300/80"
+                    style={{ height: `${Math.max(18, 105 - height)}%` }}
+                  />
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="rounded-xl border-0 shadow-sm">
+          <CardContent className="p-6">
+            <p className="text-sm text-muted-foreground">Sales Overview</p>
+            <div className="mt-4 flex items-end justify-between gap-4">
+              <div>
+                <p className="text-3xl font-semibold">{formatCurrency(sumAmounts(monthExpenses))}</p>
+                <p className="mt-1 text-sm text-green-600">
+                  {monthIncomes.length > 0 ? "+ income recorded" : "Add income to compare"}
+                </p>
+              </div>
+              <div className="grid h-28 w-28 place-items-center rounded-full border-[12px] border-violet-500 border-r-violet-100 border-t-cyan-400 dark:border-r-slate-800">
+                <span className="text-lg font-semibold">
+                  {monthIncomes.length > 0
+                    ? `${Math.round((sumAmounts(monthExpenses) / Math.max(1, sumAmounts(monthIncomes))) * 100)}%`
+                    : "0%"}
+                </span>
+              </div>
+            </div>
+            <div className="mt-5 grid grid-cols-2 gap-3 text-sm">
+              <div className="rounded-xl bg-slate-50 p-3 dark:bg-slate-900">
+                <p className="text-muted-foreground">Income</p>
+                <p className="font-semibold">{formatCurrency(sumAmounts(monthIncomes))}</p>
+              </div>
+              <div className="rounded-xl bg-slate-50 p-3 dark:bg-slate-900">
+                <p className="text-muted-foreground">Spending</p>
+                <p className="font-semibold">{formatCurrency(sumAmounts(monthExpenses))}</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <MetricCard
@@ -703,7 +939,7 @@ function DashboardSection({
           value={formatCurrency(netWorth)}
           detail={`${formatCurrency(assetValue)} assets - ${formatCurrency(profile.liabilities)} liabilities`}
           icon={WalletCards}
-          tone="teal"
+          tone="blue"
         />
         <MetricCard
           title="Today's expenses"
