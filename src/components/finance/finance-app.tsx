@@ -1010,7 +1010,6 @@ function DashboardSection({
         <CardContent className="p-0">
           <div className="border-b bg-white px-5 py-4 text-center dark:border-white/10 dark:bg-slate-900">
             <p className="text-sm uppercase tracking-wide text-muted-foreground">Cash Flow Overview</p>
-            <h2 className="mt-1 text-2xl font-semibold">Salary vs Expenses</h2>
           </div>
 
           <div className="grid gap-0 lg:grid-cols-[1fr_280px_1fr]">
