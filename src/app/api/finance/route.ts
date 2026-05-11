@@ -15,6 +15,8 @@ export async function GET() {
 
     return NextResponse.json(snapshot);
   } catch (error) {
+    console.error("[api/finance] Unable to load finance data.", error);
+
     const status = error instanceof Error && error.message === "Unauthorized" ? 401 : 500;
 
     return NextResponse.json({ error: "Unable to load finance data." }, { status });
@@ -30,6 +32,8 @@ export async function PUT(request: Request) {
 
     return NextResponse.json({ ok: true });
   } catch (error) {
+    console.error("[api/finance] Unable to save finance data.", error);
+
     const status = error instanceof Error && error.message === "Unauthorized" ? 401 : 500;
 
     return NextResponse.json({ error: "Unable to save finance data." }, { status });
