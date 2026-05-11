@@ -67,7 +67,7 @@ export const defaultProfile: UserProfile = {
   currency: "PHP",
   dateFormat: "MMM d, yyyy",
   exportFormat: "csv",
-  liabilities: 35000,
+  liabilities: 0,
 };
 
 export const defaultSettings: FinanceSettings = {
