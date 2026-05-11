@@ -11,7 +11,7 @@ export const runtime = "nodejs";
 export async function GET() {
   try {
     const user = await requireCurrentUser();
-    const snapshot = await getFinanceSnapshot(user.sub);
+    const snapshot = await getFinanceSnapshot(user.sub, user.email);
 
     return NextResponse.json(snapshot);
   } catch (error) {
@@ -28,7 +28,7 @@ export async function PUT(request: Request) {
     const user = await requireCurrentUser();
     const snapshot = (await request.json()) as FinanceSnapshot;
 
-    await saveFinanceSnapshot(user.sub, snapshot);
+    await saveFinanceSnapshot(user.sub, snapshot, user.email);
 
     return NextResponse.json({ ok: true });
   } catch (error) {

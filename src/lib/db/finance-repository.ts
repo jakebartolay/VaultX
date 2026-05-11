@@ -16,6 +16,7 @@ import { getMysqlPool } from "@/lib/db/mysql";
 export type FinanceSnapshot = Omit<FinanceBackup, "version" | "exportedAt">;
 
 type UserRow = RowDataPacket & {
+  user_id: string;
   email: string;
   full_name: string;
   preferences: string | Record<string, unknown>;
@@ -145,41 +146,59 @@ function buildSettings(user: UserRow): FinanceSettings {
   };
 }
 
-export async function getFinanceSnapshot(userId: string): Promise<FinanceSnapshot> {
+async function resolveUser(userId: string, email?: string) {
   const pool = getMysqlPool();
-  const [userRows] = await pool.query<UserRow[]>(
-    "SELECT email, full_name, preferences FROM users WHERE user_id = ? LIMIT 1",
+  let [userRows] = await pool.query<UserRow[]>(
+    "SELECT user_id, email, full_name, preferences FROM users WHERE user_id = ? LIMIT 1",
     [userId],
   );
-  const user = userRows[0];
+
+  if (!userRows[0] && email) {
+    [userRows] = await pool.query<UserRow[]>(
+      "SELECT user_id, email, full_name, preferences FROM users WHERE email = ? LIMIT 1",
+      [email],
+    );
+  }
+
+  return userRows[0];
+}
+
+export async function getFinanceSnapshot(
+  userId: string,
+  email?: string,
+): Promise<FinanceSnapshot> {
+  const pool = getMysqlPool();
+  const user = await resolveUser(userId, email);
 
   if (!user) {
     throw new Error("User not found");
   }
 
+  const effectiveUserId = user.user_id;
+
   const [expensesRows] = await pool.query<ExpenseRow[]>(
     "SELECT * FROM expenses WHERE user_id = ? ORDER BY date DESC, created_at DESC",
-    [userId],
+    [effectiveUserId],
   );
   const [incomeRows] = await pool.query<IncomeRow[]>(
     "SELECT * FROM income WHERE user_id = ? ORDER BY date DESC, created_at DESC",
-    [userId],
+    [effectiveUserId],
   );
   const [assetRows] = await pool.query<AssetRow[]>(
     "SELECT * FROM assets WHERE user_id = ? ORDER BY created_at DESC",
-    [userId],
+    [effectiveUserId],
   );
   const [categoryRows] = await pool.query<CategoryRow[]>(
     "SELECT * FROM categories WHERE user_id = ? ORDER BY is_default DESC, created_at ASC",
-    [userId],
+    [effectiveUserId],
   );
   const [budgetRows] = await pool.query<BudgetRow[]>(
     "SELECT * FROM budgets WHERE user_id = ? ORDER BY year DESC, month DESC, created_at DESC",
-    [userId],
+    [effectiveUserId],
   );
   const [goalRows] = await pool.query<GoalRow[]>(
     "SELECT * FROM savings_goals WHERE user_id = ? ORDER BY created_at DESC",
-    [userId],
+    [effectiveUserId],
   );
 
   return {
@@ -268,10 +287,22 @@ async function executeMany(
   await connection.query<ResultSetHeader>(sql, [rows]);
 }
 
-export async function saveFinanceSnapshot(userId: string, snapshot: FinanceSnapshot) {
+export async function saveFinanceSnapshot(
+  userId: string,
+  snapshot: FinanceSnapshot,
+  email?: string,
+) {
   const connection = await getMysqlPool().getConnection();
 
   try {
+    const user = await resolveUser(userId, email);
+
+    if (!user) {
+      throw new Error("User not found");
+    }
+
+    const effectiveUserId = user.user_id;
+
     await connection.beginTransaction();
 
     await connection.query(
@@ -286,27 +317,27 @@ export async function saveFinanceSnapshot(userId: string, snapshot: FinanceSnaps
           darkMode: snapshot.settings.darkMode,
           liabilities: snapshot.settings.profile.liabilities,
         }),
-        userId,
+        effectiveUserId,
       ],
     );
 
-    await connection.query("DELETE FROM notifications WHERE user_id = ?", [userId]);
-    await connection.query("DELETE FROM recurring_transactions WHERE user_id = ?", [userId]);
-    await connection.query("DELETE FROM savings_goals WHERE user_id = ?", [userId]);
-    await connection.query("DELETE FROM budgets WHERE user_id = ?", [userId]);
-    await connection.query("DELETE FROM categories WHERE user_id = ?", [userId]);
-    await connection.query("DELETE FROM assets WHERE user_id = ?", [userId]);
-    await connection.query("DELETE FROM income WHERE user_id = ?", [userId]);
-    await connection.query("DELETE FROM expenses WHERE user_id = ?", [userId]);
+    await connection.query("DELETE FROM notifications WHERE user_id = ?", [effectiveUserId]);
+    await connection.query("DELETE FROM recurring_transactions WHERE user_id = ?", [effectiveUserId]);
+    await connection.query("DELETE FROM savings_goals WHERE user_id = ?", [effectiveUserId]);
+    await connection.query("DELETE FROM budgets WHERE user_id = ?", [effectiveUserId]);
+    await connection.query("DELETE FROM categories WHERE user_id = ?", [effectiveUserId]);
+    await connection.query("DELETE FROM assets WHERE user_id = ?", [effectiveUserId]);
+    await connection.query("DELETE FROM income WHERE user_id = ?", [effectiveUserId]);
+    await connection.query("DELETE FROM expenses WHERE user_id = ?", [effectiveUserId]);
 
     await executeMany(
       connection,
       `INSERT INTO expenses
        (expense_id, user_id, date, amount, category, description, payment_method, receipt, tags, created_at, updated_at)
-       VALUES ?`,
+      VALUES ?`,
       snapshot.expenses.map((expense) => [
         expense.id,
-        userId,
+        effectiveUserId,
         toMysqlDateTime(expense.date),
         expense.amount,
         expense.category,
@@ -323,10 +354,10 @@ export async function saveFinanceSnapshot(userId: string, snapshot: FinanceSnaps
       connection,
       `INSERT INTO income
        (income_id, user_id, date, amount, source, description, payment_method, tags, created_at, updated_at)
-       VALUES ?`,
+      VALUES ?`,
       snapshot.incomes.map((income) => [
         income.id,
-        userId,
+        effectiveUserId,
         toMysqlDate(income.date),
         income.amount,
         income.source,
@@ -343,10 +374,10 @@ export async function saveFinanceSnapshot(userId: string, snapshot: FinanceSnaps
       `INSERT INTO assets
        (asset_id, user_id, name, category, purchase_date, purchase_price, current_value, location,
         serial_number, warranty_expiry, insurance_details, \`condition\`, photos, documents, notes, created_at, updated_at)
-       VALUES ?`,
+      VALUES ?`,
       snapshot.assets.map((asset) => [
         asset.id,
-        userId,
+        effectiveUserId,
         asset.name,
         asset.category,
         toMysqlDate(asset.purchaseDate),
@@ -369,10 +400,10 @@ export async function saveFinanceSnapshot(userId: string, snapshot: FinanceSnaps
       connection,
       `INSERT INTO categories
        (category_id, user_id, type, name, icon, color, is_default, created_at)
-       VALUES ?`,
+      VALUES ?`,
       snapshot.categories.map((category) => [
         category.id,
-        userId,
+        effectiveUserId,
         category.type,
         category.name,
         category.icon ?? null,
@@ -386,10 +417,10 @@ export async function saveFinanceSnapshot(userId: string, snapshot: FinanceSnaps
       connection,
       `INSERT INTO budgets
        (budget_id, user_id, category, monthly_limit, month, year, created_at)
-       VALUES ?`,
+      VALUES ?`,
       snapshot.budgets.map((budget) => [
         budget.id,
-        userId,
+        effectiveUserId,
         budget.category,
         budget.monthlyLimit,
         budget.month,
@@ -402,10 +433,10 @@ export async function saveFinanceSnapshot(userId: string, snapshot: FinanceSnaps
       connection,
       `INSERT INTO savings_goals
        (goal_id, user_id, name, target_amount, current_amount, due_date, notes, created_at, updated_at)
-       VALUES ?`,
+      VALUES ?`,
       snapshot.goals.map((goal) => [
         goal.id,
-        userId,
+        effectiveUserId,
         goal.name,
         goal.targetAmount,
         goal.currentAmount,
